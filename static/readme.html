@@ -1,0 +1,623 @@
+<h1>cursor-api</h1>
+
+<h2>说明</h2>
+
+<ul>
+  <li>当前版本已稳定，若发现响应出现缺字漏字，与本程序无关。</li>
+  <li>若发现首字慢，与本程序无关。</li>
+  <li>若发现响应出现乱码，也与本程序无关。</li>
+  <li>属于官方的问题，请不要像作者反馈。</li>
+  <li>本程序拥有堪比客户端原本的速度，甚至可能更快。</li>
+  <li>本程序的性能是非常厉害的。</li>
+</ul>
+
+<h2>获取key</h2>
+
+<ol>
+  <li>访问 <a href="https://www.cursor.com">www.cursor.com</a> 并完成注册登录</li>
+  <li>在浏览器中打开开发者工具（F12）</li>
+  <li>在 Application-Cookies 中查找名为 <code>WorkosCursorSessionToken</code> 的条目，并复制其第三个字段。请注意，%3A%3A 是 :: 的 URL 编码形式，cookie
+    的值使用冒号 (:) 进行分隔。</li>
+</ol>
+
+<h2>配置说明</h2>
+
+<h3>环境变量</h3>
+
+<ul>
+  <li><code>PORT</code>: 服务器端口号（默认：3000）</li>
+  <li><code>AUTH_TOKEN</code>: 认证令牌（必须，用于API认证）</li>
+  <li><code>ROUTE_PREFIX</code>: 路由前缀（可选）</li>
+  <li><code>TOKEN_FILE</code>: token文件路径（默认：.token）</li>
+  <li><code>TOKEN_LIST_FILE</code>: token列表文件路径（默认：.token-list）</li>
+</ul>
+
+<p>更多请查看 <code>/env-example</code></p>
+
+<h3>Token文件格式</h3>
+
+<ol>
+  <li>
+    <p><code>.token</code> 文件：每行一个token，支持以下格式：</p>
+
+    <pre><code># 这是注释
+token1
+# alias与标签的作用差不多
+alias::token2
+</code></pre>
+
+    <p>alias 可以是任意值，用于区分不同的 token，更方便管理，WorkosCursorSessionToken 是相同格式<br>
+      该文件将自动向.token-list文件中追加token，同时自动生成checksum</p>
+  </li>
+
+  <li>
+    <p><code>.token-list</code> 文件：每行为token和checksum的对应关系：</p>
+
+    <pre><code># 这里的#表示这行在下次读取要删除
+token1,checksum1
+# alias被舍弃，会自动删除最后一个:或%3A的后一位前的所有内容
+token2,checksum2
+</code></pre>
+
+    <p>该文件可以被自动管理，但用户仅可在确认自己拥有修改能力时修改，一般仅有以下情况需要手动修改：</p>
+
+    <ul>
+      <li>需要删除某个 token</li>
+      <li>需要使用已有 checksum 来对应某一个 token</li>
+    </ul>
+  </li>
+</ol>
+
+<h3>模型列表</h3>
+
+<p>写死了，后续也不会会支持自定义模型列表</p>
+
+<pre><code>claude-3.5-sonnet
+gpt-4
+gpt-4o
+claude-3-opus
+cursor-fast
+cursor-small
+gpt-3.5-turbo
+gpt-4-turbo-2024-04-09
+gpt-4o-128k
+gemini-1.5-flash-500k
+claude-3-haiku-200k
+claude-3-5-sonnet-200k
+claude-3-5-sonnet-20241022
+gpt-4o-mini
+o1-mini
+o1-preview
+o1
+claude-3.5-haiku
+gemini-exp-1206
+gemini-2.0-flash-thinking-exp
+gemini-2.0-flash-exp
+</code></pre>
+
+<h1>接口说明</h1>
+
+<h2>基础对话</h2>
+
+<ul>
+  <li>接口地址: <code>/v1/chat/completions</code></li>
+  <li>请求方法: POST</li>
+  <li>认证方式: Bearer Token
+    <ol>
+      <li>使用环境变量 <code>AUTH_TOKEN</code> 进行认证</li>
+      <li>使用 <code>.token</code> 文件中的令牌列表进行轮询认证</li>
+      <li>在v0.1.3-rc.3支持直接使用 token,checksum 进行认证，但未提供配置关闭</li>
+    </ol>
+  </li>
+</ul>
+
+<h3>请求格式</h3>
+
+<pre><code class="language-json">{
+  "model": "string",
+  "messages": [
+    {
+      "role": "system" | "user" | "assistant", // 也可以是 "developer" | "human" | "ai"
+      "content": "string" | [
+        {
+          "type": "text" | "image_url",
+          "text": "string",
+          "image_url": {
+            "url": "string"
+          }
+        }
+      ]
+    }
+  ],
+  "stream": boolean
+}
+</code></pre>
+
+<h3>响应格式</h3>
+
+<p>如果 <code>stream</code> 为 <code>false</code>:</p>
+
+<pre><code class="language-json">{
+  "id": "string",
+  "object": "chat.completion",
+  "created": number,
+  "model": "string",
+  "choices": [
+    {
+      "index": number,
+      "message": {
+        "role": "assistant",
+        "content": "string"
+      },
+      "finish_reason": "stop" | "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": number, // 0
+    "completion_tokens": number, // 0
+    "total_tokens": number // 0
+  }
+}
+</code></pre>
+
+<p>如果 <code>stream</code> 为 <code>true</code>:</p>
+
+<pre><code>data: {"id":"string","object":"chat.completion.chunk","created":number,"model":"string","choices":[{"index":number,"delta":{"role":"assistant","content":"string"},"finish_reason":null}]}
+
+data: {"id":"string","object":"chat.completion.chunk","created":number,"model":"string","choices":[{"index":number,"delta":{"content":"string"},"finish_reason":null}]}
+
+data: {"id":"string","object":"chat.completion.chunk","created":number,"model":"string","choices":[{"index":number,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+</code></pre>
+
+<h2>Token管理接口</h2>
+
+<h3>简易Token信息管理页面</h3>
+
+<ul>
+  <li>接口地址: <code>/tokeninfo</code></li>
+  <li>请求方法: GET</li>
+  <li>响应格式: HTML页面</li>
+  <li>功能: 获取 .token 和 .token-list 文件内容,并允许用户方便地使用 API 修改文件内容</li>
+</ul>
+
+<h3>更新Token信息 (GET)</h3>
+
+<ul>
+  <li>接口地址: <code>/update-tokeninfo</code></li>
+  <li>请求方法: GET</li>
+  <li>认证方式: 不需要</li>
+  <li>功能: 重新加载tokens并更新应用状态</li>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "status": "success",
+  "message": "Token list has been reloaded"
+}
+</code></pre>
+
+<h3>更新Token信息 (POST)</h3>
+
+<ul>
+  <li>接口地址: <code>/update-tokeninfo</code></li>
+  <li>请求方法: POST</li>
+  <li>认证方式: Bearer Token</li>
+  <li>请求格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "tokens": "string",
+  "token_list": "string"
+}
+</code></pre>
+
+<ul>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "status": "success",
+  "token_file": "string",
+  "token_list_file": "string",
+  "tokens_count": number,
+  "message": "Token files have been updated and reloaded"
+}
+</code></pre>
+
+<h3>获取Token信息</h3>
+
+<ul>
+  <li>接口地址: <code>/get-tokeninfo</code></li>
+  <li>请求方法: POST</li>
+  <li>认证方式: Bearer Token</li>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "status": "success",
+  "token_file": "string",
+  "token_list_file": "string",
+  "tokens": "string",
+  "tokens_count": number,
+  "token_list": "string"
+}
+</code></pre>
+
+<h2>配置管理接口</h2>
+
+<h3>配置页面</h3>
+
+<ul>
+  <li>接口地址: <code>/config</code></li>
+  <li>请求方法: GET</li>
+  <li>响应格式: HTML页面</li>
+  <li>功能: 提供配置管理界面,可以修改页面内容和系统配置</li>
+</ul>
+
+<h3>更新配置</h3>
+
+<ul>
+  <li>接口地址: <code>/config</code></li>
+  <li>请求方法: POST</li>
+  <li>认证方式: Bearer Token</li>
+  <li>请求格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "action": "get" | "update" | "reset",
+  "path": "string",
+  "content": {
+    "type": "default" | "text" | "html",
+    "content": "string"
+  },
+  "enable_stream_check": boolean,
+  "include_stop_stream": boolean,
+  "vision_ability": "none" | "base64" | "all", // "disabled" | "base64-only" | "base64-http"
+  "enable_slow_pool": boolean,
+  "enable_all_claude": boolean,
+  "check_usage_models": {
+    "type": "none" | "default" | "all" | "list",
+    "content": "string"
+  }
+}
+</code></pre>
+
+<ul>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "status": "success",
+  "message": "string",
+  "data": {
+    "page_content": {
+      "type": "default" | "text" | "html", // 对于js和css后两者是一样的
+      "content": "string"
+    },
+    "enable_stream_check": boolean,
+    "include_stop_stream": boolean,
+    "vision_ability": "none" | "base64" | "all",
+    "enable_slow_pool": boolean,
+    "enable_all_claude": boolean,
+    "check_usage_models": {
+      "type": "none" | "default" | "all" | "list",
+      "content": "string"
+    }
+  }
+}
+</code></pre>
+
+<p>注意：<code>check_usage_models</code> 字段的默认值为：</p>
+
+<pre><code class="language-json">{
+  "type": "default",
+  "content": "claude-3-5-sonnet-20241022,claude-3.5-sonnet,gemini-exp-1206,gpt-4,gpt-4-turbo-2024-04-09,gpt-4o,claude-3.5-haiku,gpt-4o-128k,gemini-1.5-flash-500k,claude-3-haiku-200k,claude-3-5-sonnet-200k"
+}</code></pre>
+
+<p>这些模型将默认进行使用量检查。您可以通过配置接口修改此设置。</p>
+
+<p>路径修改注意：选择类型再修改文本，否则选择默认时内容的修改无效，在更新配置后自动被覆盖导致内容丢失，自行改进。</p>
+
+<h2>静态资源接口</h2>
+
+<h3>获取共享样式</h3>
+
+<ul>
+  <li>接口地址: <code>/static/shared-styles.css</code></li>
+  <li>请求方法: GET</li>
+  <li>响应格式: CSS文件</li>
+  <li>功能: 获取共享样式表</li>
+</ul>
+
+<h3>获取共享脚本</h3>
+
+<ul>
+  <li>接口地址: <code>/static/shared.js</code></li>
+  <li>请求方法: GET</li>
+  <li>响应格式: JavaScript文件</li>
+  <li>功能: 获取共享JavaScript代码</li>
+</ul>
+
+<h3>环境变量示例</h3>
+
+<ul>
+  <li>接口地址: <code>/env-example</code></li>
+  <li>请求方法: GET</li>
+  <li>响应格式: 文本文件</li>
+  <li>功能: 获取环境变量配置示例</li>
+</ul>
+
+<h2>其他接口</h2>
+
+<h3>获取模型列表</h3>
+
+<ul>
+  <li>接口地址: <code>/v1/models</code></li>
+  <li>请求方法: GET</li>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "object": "list",
+  "data": [
+    {
+      "id": "string",
+      "object": "model",
+      "created": number,
+      "owned_by": "string"
+    }
+  ]
+}
+</code></pre>
+
+<h3>获取或修复checksum</h3>
+
+<ul>
+  <li>接口地址: <code>/get-checksum</code></li>
+  <li>请求方法: GET</li>
+  <li>请求参数:
+    <ul>
+      <li><code>bad_checksum</code>: 可选，用于修复的旧版本生成的checksum，也可只传入前8个字符，可用别名checksum</li>
+    </ul>
+  </li>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "checksum": "string"
+}
+</code></pre>
+
+<p>说明：</p>
+<ul>
+  <li>如果不提供<code>bad_checksum</code>参数，将生成一个新的随机checksum</li>
+  <li>如果提供<code>bad_checksum</code>参数，将尝试修复旧版本的checksum以适配当前版本(v0.1.3-rc.3)使用，修复失败会返回新的checksum</li>
+</ul>
+
+<h3>健康检查接口</h3>
+
+<ul>
+  <li>接口地址: <code>/health</code> 或 <code>/</code>(重定向)</li>
+  <li>请求方法: GET</li>
+  <li>认证方式: Bearer Token（可选）</li>
+  <li>响应格式: 根据配置返回不同的内容类型(默认、文本或HTML)，默认JSON</li>
+</ul>
+
+<pre><code class="language-json">{
+  "status": "success",
+  "version": "string",
+  "uptime": number,
+  "stats": {
+    "started": "string",
+    "total_requests": number,
+    "active_requests": number,
+    "system": {
+      "memory": {
+        "rss": number
+      },
+      "cpu": {
+        "usage": number
+      }
+    }
+  },
+  "models": ["string"],
+  "endpoints": ["string"]
+}
+</code></pre>
+
+<p>注意：<code>stats</code> 字段仅在请求头中包含正确的 <code>AUTH_TOKEN</code> 时才会返回。否则，该字段将被省略。</p>
+
+<h3>获取日志接口</h3>
+
+<ul>
+  <li>接口地址: <code>/logs</code></li>
+  <li>请求方法: GET</li>
+  <li>响应格式: 根据配置返回不同的内容类型(默认、文本或HTML)</li>
+</ul>
+
+<h3>获取日志数据</h3>
+
+<ul>
+  <li>接口地址: <code>/logs</code></li>
+  <li>请求方法: POST</li>
+  <li>认证方式: Bearer Token</li>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "total": number,
+  "logs": [
+    {
+      "id": number,
+      "timestamp": "string",
+      "model": "string",
+      "token_info": {
+        "token": "string",
+        "checksum": "string",
+        "profile": {
+          "usage": {
+            "premium": {
+              "requests": number,
+              "tokens": number,
+              "max_requests": number,
+              "max_tokens": number
+            },
+            "standard": {
+              "requests": number,
+              "tokens": number,
+              "max_requests": number,
+              "max_tokens": number
+            },
+            "unknown": {
+              "requests": number,
+              "tokens": number,
+              "max_requests": number,
+              "max_tokens": number
+            }
+          },
+          "user": {
+            "email": "string",
+            "name": "string",
+            "id": "string",
+            "updated_at": "string"
+          },
+          "stripe": {
+            "membership_type": "free" | "free_trial" | "pro" | "enterprise",
+            "payment_id": "string",
+            "days_remaining_on_trial": number
+          }
+        }
+      },
+      "prompt": "string",
+      "timing": {
+        "total": number,
+        "first": number
+      },
+      "stream": boolean,
+      "status": "string",
+      "error": "string"
+    }
+  ],
+  "timestamp": "string",
+  "status": "success"
+}
+</code></pre>
+
+<h3>获取用户信息</h3>
+
+<ul>
+  <li>接口地址: <code>/get-userinfo</code></li>
+  <li>请求方法: POST</li>
+  <li>认证方式: 请求体中包含token</li>
+  <li>请求格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "token": "string"
+}
+</code></pre>
+
+<ul>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "usage": {
+    "premium": {
+      "requests": number,
+      "tokens": number,
+      "max_requests": number,
+      "max_tokens": number
+    },
+    "standard": {
+      "requests": number,
+      "tokens": number,
+      "max_requests": number,
+      "max_tokens": number
+    },
+    "unknown": {
+      "requests": number,
+      "tokens": number,
+      "max_requests": number,
+      "max_tokens": number
+    }
+  },
+  "user": {
+    "email": "string",
+    "name": "string",
+    "id": "string",
+    "updated_at": "string"
+  },
+  "stripe": {
+    "membership_type": "free" | "free_trial" | "pro" | "enterprise",
+    "payment_id": "string",
+    "days_remaining_on_trial": number
+  }
+}
+</code></pre>
+
+<p>如果发生错误，响应格式为:</p>
+
+<pre><code class="language-json">{
+  "error": "string"
+}
+</code></pre>
+
+<h3>基础校准</h3>
+
+<ul>
+  <li>接口地址: <code>/basic-calibration</code></li>
+  <li>请求方法: POST</li>
+  <li>认证方式: 请求体中包含token</li>
+  <li>请求格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "token": "string"
+}
+</code></pre>
+
+<ul>
+  <li>响应格式:</li>
+</ul>
+
+<pre><code class="language-json">{
+  "status": "success" | "error",
+  "message": "string",
+  "user_id": "string",
+  "create_at": "string",
+  "checksum_time": number
+}
+</code></pre>
+
+<p>注意: <code>user_id</code>, <code>create_at</code>, 和 <code>checksum_time</code> 字段在校验失败时可能不存在。</p>
+
+<h2>偷偷写在最后的话</h2>
+
+<p>虽然作者觉得<del>骗</del>收点钱合理，但不强求，要是<strong>主动自愿</strong>发我我肯定收（因为真有人这么做，虽然不是赞助），赞助很合理吧</p>
+
+<p>不是<strong>主动自愿</strong>就算了，不是很缺，给了会很感动罢了。</p>
+
+<p>虽然不是很建议你赞助，但如果你赞助了，大概可以：</p>
+
+<ul>
+  <li>测试版更新</li>
+  <li>要求功能</li>
+  <li>问题更快解决</li>
+</ul>
+
+<p>即使如此，我也保留可以拒绝赞助和拒绝要求的权利。</p>
+
+<p>求赞助还是有点不要脸了，接下来是吐槽：</p>
+
+<p>辛辛苦苦做这个也不知道是为了谁，好累。其实还有很多功能可以做，比如直接传token支持配置（其实这个要专门做一个页面）。</p>
+
+<p>主要没想做用户管理，所以不存在是否接入LinuxDo的问题。虽然那个半成品公益版做好了就是了。</p>
+
+<p>就说这么多，没啥可说的，不管那么多，做就完了。<span>[doge]</span> 自己想象吧。</p>
+
+<p>为什么一直说要跑路呢？主要是有时Cursor的Claude太假了，堪比gpt-4o-mini，我对比发现真没啥差别，比以前差远了，无力了，所以不太想做了。我也感觉很奇怪。</p>
+
+<p>查询额度会在一开始检测导致和完成时的额度有些差别，但是懒得改了，反正差别不大，对话也没响应内容，恰好完成了统一。</p>

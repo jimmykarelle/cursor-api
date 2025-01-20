@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;,">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token 信息管理</title>
+  <!-- 引入共享样式 -->
+  <link rel="stylesheet" href="/static/shared-styles.css">
+  <script src="/static/shared.js"></script>
+  <style>
+    .token-container {
+      display: grid;
+      gap: var(--spacing);
+    }
+
+    .token-section {
+      background: var(--card-background);
+      padding: var(--spacing);
+      border-radius: var(--border-radius);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .shortcuts {
+      margin-top: var(--spacing);
+      padding: 12px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    kbd {
+      background: #eee;
+      border-radius: 3px;
+      border: 1px solid #b4b4b4;
+      padding: 1px 4px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Token 信息管理</h1>
+
+  <div class="container">
+    <div class="form-group">
+      <label>认证令牌:</label>
+      <input type="password" id="authToken" placeholder="输入 AUTH_TOKEN">
+    </div>
+  </div>
+
+  <div class="token-container">
+    <div class="token-section">
+      <h3>Token 配置</h3>
+      <div class="button-group">
+        <button onclick="getTokenInfo()">获取当前配置</button>
+        <button onclick="updateTokenInfo()" class="secondary">保存更改</button>
+      </div>
+
+      <div class="form-group">
+        <label>Token 文件内容:</label>
+        <textarea id="tokens" placeholder="每行一个 token"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Token List 文件内容:</label>
+        <textarea id="tokenList" placeholder="token,checksum 格式，每行一对"></textarea>
+      </div>
+
+      <div class="shortcuts">
+        快捷键: <kbd>Ctrl</kbd> + <kbd>S</kbd> 保存更改
+      </div>
+    </div>
+  </div>
+
+  <div id="message"></div>
+
+  <script>
+    function showMessage(text, isError = false) {
+      showGlobalMessage(text, isError);
+    }
+
+    async function getTokenInfo() {
+      const data = await makeAuthenticatedRequest('/get-tokeninfo');
+      if (data) {
+        document.getElementById('tokens').value = data.tokens;
+        document.getElementById('tokenList').value = data.token_list;
+        showGlobalMessage('配置获取成功');
+      }
+    }
+
+    async function updateTokenInfo() {
+      const tokens = document.getElementById('tokens').value;
+      const tokenList = document.getElementById('tokenList').value;
+
+      if (!tokens) {
+        showGlobalMessage('Token 文件内容不能为空', true);
+        return;
+      }
+
+      const data = await makeAuthenticatedRequest('/update-tokeninfo', {
+        body: JSON.stringify({
+          tokens: tokens,
+          token_list: tokenList || undefined
+        })
+      });
+
+      if (data) {
+        showGlobalMessage(`更新成功: ${data.message}`);
+      }
+    }
+
+    // 快捷键支持
+    document.addEventListener('keydown', function (e) {
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        updateTokenInfo();
+      }
+    });
+
+    // 初始化 token 处理
+    initializeTokenHandling('authToken');
+  </script>
+</body>
+
+</html>

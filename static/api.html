@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/x-icon" href="data:image/x-icon;,">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API 管理</title>
+  <link rel="stylesheet" href="/static/shared-styles.css">
+  <script src="/static/shared.js"></script>
+  <style>
+    .status-healthy {
+      color: var(--success-color);
+      animation: pulse 2s infinite;
+    }
+
+    .status-error {
+      color: var(--error-color);
+    }
+
+    @keyframes pulse {
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.6;
+      }
+
+      100% {
+        opacity: 1;
+      }
+    }
+
+    .footer {
+      margin-top: 2rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      text-align: center;
+    }
+
+    .copy-button {
+      position: absolute;
+      right: 0px;
+      top: 0px;
+      padding: 4px;
+      background: transparent;
+      min-height: auto;
+    }
+
+    .model-input-container {
+      position: relative;
+    }
+
+    .custom-suffix {
+      margin-top: 1rem;
+    }
+
+    .progress-container {
+      margin-top: 1rem;
+    }
+
+    .usage-progress-container {
+      width: 100%;
+      height: 8px;
+      background: var(--border-color);
+      border-radius: 4px;
+      margin: 8px 0;
+      overflow: hidden;
+    }
+
+    .usage-progress-bar {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+
+    .progress-low {
+      background: var(--success-color);
+    }
+
+    .progress-medium {
+      background: #FFA726;
+    }
+
+    .progress-high {
+      background: var(--error-color);
+    }
+
+    .usage-progress-bar.unlimited {
+      background: repeating-linear-gradient(45deg,
+          var(--success-color),
+          var(--success-color) 10px,
+          transparent 10px,
+          transparent 20px);
+      opacity: 0.5;
+    }
+
+    @media (max-width: 768px) {
+      .copy-button {
+        width: auto !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h1>API 管理</h1>
+      <div id="serverStatus" class="status-healthy">Healthy</div>
+    </div>
+
+    <div class="form-group">
+      <label for="authToken">AUTH Token</label>
+      <input type="text" id="authToken" placeholder="请输入 AUTH Token">
+    </div>
+
+    <div class="button-group">
+      <button onclick="calibrateToken()">校准 Token</button>
+      <button onclick="getUserInfo()">获取用户信息</button>
+      <button onclick="getModels()">获取模型列表</button>
+    </div>
+
+    <div class="form-group model-input-container">
+      <label for="modelList">模型列表</label>
+      <input type="text" id="modelList" readonly>
+      <button class="copy-button" onclick="copyModelList()">📋</button>
+    </div>
+
+    <div class="form-group custom-suffix">
+      <input type="checkbox" id="customSuffix" onchange="toggleCustomSuffix()">
+      <label for="customSuffix">添加自定义后缀</label>
+      <input type="text" id="suffixInput" placeholder="@OpenAI" style="display: none;">
+    </div>
+  </div>
+
+  <div id="userInfoContainer" class="container" style="display: none;">
+    <h2>用户信息</h2>
+    <div id="userDetails"></div>
+    <div id="usageProgressContainer" class="progress-container"></div>
+  </div>
+
+  <div id="message" class="message"></div>
+
+  <footer class="footer">
+    <div id="version"></div>
+    <div id="uptime"></div>
+  </footer>
+
+  <script>
+    // 全局变量
+    let globalModels = [];
+
+    // Token校准结果缓存
+    const calibrationCache = new Map();
+
+    // 服务器状态检查
+    async function checkServerStatus() {
+      try {
+        const response = await fetch('/health');
+        const data = await response.json();
+
+        // 更新状态显示
+        const statusElement = document.getElementById('serverStatus');
+        statusElement.className = data.status === 'healthy' ? 'status-healthy' : 'status-error';
+        statusElement.textContent = data.status === 'healthy' ? 'Healthy' : 'Error';
+
+        // 更新版本和运行时间
+        document.getElementById('version').textContent = `版本: ${data.version}`;
+        document.getElementById('uptime').textContent = formatUptime(data.uptime);
+
+        // 保存模型列表
+        globalModels = data.models || [];
+
+        return true;
+      } catch (error) {
+        const statusElement = document.getElementById('serverStatus');
+        statusElement.className = 'status-error';
+        statusElement.textContent = 'Error';
+        showGlobalMessage('服务器状态检查失败', true);
+        return false;
+      }
+    }
+
+    // 定时检查服务器状态（5分钟）
+    function startStatusCheck() {
+      checkServerStatus();
+      setInterval(checkServerStatus, 5 * 60 * 1000);
+    }
+
+    // 格式化运行时间
+    function formatUptime(seconds) {
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return `运行时间: ${days}天 ${hours}时 ${minutes}分`;
+    }
+
+    // 获取模型列表
+    async function getModels() {
+      const modelList = document.getElementById('modelList');
+      const suffix = document.getElementById('customSuffix').checked ?
+        document.getElementById('suffixInput').value : '';
+
+      modelList.value = globalModels.map(model => model + suffix).join(',');
+    }
+
+    // 复制模型列表
+    function copyModelList() {
+      const modelList = document.getElementById('modelList');
+      navigator.clipboard.writeText(modelList.value)
+        .then(() => showGlobalMessage('已复制到剪贴板'))
+        .catch(() => showGlobalMessage('复制失败', true));
+    }
+
+    // 切换自定义后缀输入框
+    function toggleCustomSuffix() {
+      const suffixInput = document.getElementById('suffixInput');
+      suffixInput.style.display = document.getElementById('customSuffix').checked ? 'block' : 'none';
+      if (document.getElementById('customSuffix').checked) {
+        getModels();
+      }
+    }
+
+    // Token相关请求
+    async function makeTokenRequest(url, token) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ token })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+      } catch (error) {
+        showGlobalMessage(`请求失败: ${error.message}`, true);
+        return null;
+      }
+    }
+
+    // Token 校准
+    async function calibrateToken() {
+      const token = document.getElementById('authToken').value;
+      if (!token) {
+        showGlobalMessage('请输入 AUTH Token', true);
+        return;
+      }
+      const result = await makeTokenRequest('/basic-calibration', token);
+      if (result) {
+        if (result.status === 'error') {
+          showGlobalMessage(result.message, true);
+        } else {
+          showGlobalMessage('校准成功');
+          // 缓存校准结果
+          calibrationCache.set(token, {
+            user_id: result.user_id,
+            create_at: result.create_at,
+            checksum_time: calibResult.checksum_time
+          });
+          updateUsageDisplay(null, calibrationCache.get(token));
+        }
+      }
+    }
+
+    // 获取用户信息
+    async function getUserInfo() {
+      const token = document.getElementById('authToken').value;
+      if (!token) {
+        showGlobalMessage('请输入 Token', true);
+        return;
+      }
+      // 如果没有校准缓存，先进行校准
+      if (!calibrationCache.has(token)) {
+        const calibResult = await makeTokenRequest('/basic-calibration', token);
+        if (calibResult && calibResult.status !== 'error') {
+          calibrationCache.set(token, {
+            user_id: calibResult.user_id,
+            create_at: calibResult.create_at,
+            checksum_time: calibResult.checksum_time
+          });
+        }
+      }
+
+      const result = await makeTokenRequest('/get-userinfo', token);
+      if (result) {
+        const container = document.getElementById('userInfoContainer');
+        container.style.display = 'block';
+        updateUsageDisplay(result, calibrationCache.get(token));
+      }
+    }
+
+    // 更新使用情况显示
+    function updateUsageDisplay(tokenInfo, calibInfo) {
+      const userDetails = document.getElementById('userDetails');
+      const progressContainer = document.getElementById('usageProgressContainer');
+
+      // 清空现有内容
+      userDetails.innerHTML = '';
+      progressContainer.innerHTML = '';
+
+      // 添加用户基本信息
+      if (tokenInfo.user || calibInfo) {
+        const user = tokenInfo.user || {};
+        userDetails.innerHTML += `<p>用户ID: ${calibInfo ? calibInfo.user_id : user.id}</p><p>邮箱: ${user.email || ''}</p><p>用户名: ${user.name || ''}</p>${user.updated_at ? `<p>更新时间: ${new Date(user.updated_at).toLocaleString()}</p>` : ''}${calibInfo ? `<p>令牌创建时间: ${new Date(calibInfo.create_at).toLocaleString()}</p>` : ''}${calibInfo && calibInfo.checksum_time ? `<p>校验和时间区间: ${new Date(calibInfo.checksum_time * 1e6).toLocaleString()} - ${new Date((calibInfo.checksum_time + 1) * 1e6 - 1).toLocaleString()}</p>` : ''}`;
+      }
+
+      // 添加 Stripe 会员信息
+      if (tokenInfo.stripe) {
+        const stripe = tokenInfo.stripe;
+        userDetails.innerHTML += `<p>会员类型: ${stripe.membership_type}</p>${stripe.payment_id ? `<p>付款 ID: ${stripe.payment_id}</p>` : ''}<p>试用剩余: ${stripe.days_remaining_on_trial} 天</p>`;
+      }
+
+      // 添加使用情况进度条
+      if (tokenInfo.usage) {
+        const usage = tokenInfo.usage;
+        const models = {
+          '高级模型': usage.premium,
+          '标准模型': usage.standard,
+          '未知模型': usage.unknown
+        };
+
+        Object.entries(models).forEach(([modelName, data]) => {
+          if (data) {
+            const isUnlimited = !data.max_requests;
+            const percentage = isUnlimited ? 100 : (data.requests / data.max_requests * 100).toFixed(1);
+            const progressClass = isUnlimited ? 'unlimited' : getProgressBarClass(parseFloat(percentage));
+
+            progressContainer.innerHTML += `<div><p>${modelName}: ${data.requests}/${isUnlimited ? '∞' : data.max_requests} 请求 ${isUnlimited ? '' : `(${percentage}%)`}, ${data.tokens} tokens</p>
+<div class="usage-progress-container"><div class="usage-progress-bar ${progressClass}" style="width: ${percentage}%"></div></div></div>`;
+          }
+        });
+      }
+    }
+
+    // 获取进度条样式
+    function getProgressBarClass(percentage) {
+      if (percentage < 50) return 'progress-low';
+      if (percentage < 80) return 'progress-medium';
+      return 'progress-high';
+    }
+
+    // Token变更时清除缓存
+    document.getElementById('authToken').addEventListener('change', (e) => {
+      calibrationCache.delete(e.target.value); // 清除对应的缓存
+    });
+
+    // 页面加载完成后初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      startStatusCheck();
+
+      // 监听后缀输入变化
+      document.getElementById('suffixInput').addEventListener('input', getModels);
+    });
+  </script>
+</body>
+
+</html>

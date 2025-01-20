@@ -1,0 +1,13 @@
+{
+  "name": "html-minifier-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "clean-css": "^5.3.3",
+    "html-minifier-terser": "^7.2.0",
+    "terser": "^5.37.0"
+  }
+}

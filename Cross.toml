@@ -1,0 +1,14 @@
+[target.x86_64-unknown-linux-gnu]
+pre-build = [
+    "set -e",
+    "apt-get update",
+    "apt-get install -y --no-install-recommends build-essential protobuf-compiler pkg-config libssl-dev nodejs npm",
+    "rm -rf /var/lib/apt/lists/*"
+]
+
+[target.x86_64-unknown-freebsd]
+pre-build = [
+    "pkg update",
+    "pkg install -y node20 www/npm protobuf ca_root_nss bash gmake pkgconf openssl",
+    "export SSL_CERT_FILE=/etc/ssl/cert.pem"
+]
