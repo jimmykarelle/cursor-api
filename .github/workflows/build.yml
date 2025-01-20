@@ -1,0 +1,227 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            targets: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            targets: x86_64-pc-windows-msvc
+          - os: macos-latest
+            targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+    steps:
+    - uses: actions/checkout@v4.2.2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4.1.0
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: 'scripts/package-lock.json'
+        run: cd scripts && npm install && cd ..
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.targets }}
+
+    - name: Install Linux dependencies (x86_64)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          protobuf-compiler \
+          pkg-config \
+          libssl-dev \
+          openssl \
+          musl-tools \
+          musl-dev \
+          libssl-dev:native \
+          linux-libc-dev:native
+
+        # 设置 OpenSSL 环境变量
+        echo "OPENSSL_DIR=/usr" >> $GITHUB_ENV
+        echo "OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+        echo "OPENSSL_INCLUDE_DIR=/usr/include/openssl" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+
+    - name: Build Linux x86_64 (Dynamic)
+      if: runner.os == 'Linux'
+      run: bash scripts/build.sh
+
+    - name: Build Linux x86_64 (Static)
+      if: runner.os == 'Linux'
+      run: |
+        # 使用 musl 目标
+        rustup target remove x86_64-unknown-linux-gnu
+        rustup target add x86_64-unknown-linux-musl
+
+        # 设置静态编译环境变量
+        export CC=musl-gcc
+
+        bash scripts/build.sh --static
+
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      run: |
+        brew install \
+          protobuf \
+          pkg-config \
+          openssl@3
+        echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> $GITHUB_ENV
+
+    - name: Install Windows dependencies
+      if: runner.os == 'Windows'
+      run: |
+        choco install -y protoc
+        choco install -y openssl
+        choco install -y nodejs-lts
+
+        # 刷新环境变量
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+        # 设置 OpenSSL 环境变量
+        echo "OPENSSL_DIR=C:\Program Files\OpenSSL" >> $env:GITHUB_ENV
+        echo "PKG_CONFIG_PATH=C:\Program Files\OpenSSL\lib\pkgconfig" >> $env:GITHUB_ENV
+
+    - name: Build macOS (Dynamic)
+      if: runner.os == 'macOS' || runner.os == 'Windows'
+      run: bash scripts/build.sh
+
+    - name: Build macOS (Static)
+      if: runner.os == 'macOS' || runner.os == 'Windows'
+      run: bash scripts/build.sh --static
+
+    # - name: Verify build artifacts
+    #   run: |
+    #     if [ ! -d "release" ] || [ -z "$(ls -A release)" ]; then
+    #       echo "Error: No build artifacts found in release directory"
+    #       exit 1
+    #     fi
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4.5.0
+      with:
+        name: binaries-${{ matrix.os }}
+        path: release/*
+        retention-days: 1
+
+  build-freebsd:
+    name: Build FreeBSD
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4.2.2
+
+    - name: Build on FreeBSD
+      uses: vmactions/freebsd-vm@v1.1.5
+      with:
+        usesh: true
+        prepare: |
+          # 设置持久化的环境变量
+          echo 'export SSL_CERT_FILE=/etc/ssl/cert.pem' >> /root/.profile
+          echo 'export PATH="/usr/local/bin:$PATH"' >> /root/.profile
+
+          # 安装基础依赖
+          pkg update
+          pkg install -y \
+            git \
+            curl \
+            node20 \
+            www/npm \
+            protobuf \
+            ca_root_nss \
+            bash \
+            gmake \
+            pkgconf \
+            openssl \
+            libressl-devel \
+            libiconv \
+            gettext-tools \
+            gettext-runtime
+
+          export SSL_CERT_FILE=/etc/ssl/cert.pem
+
+          # 克隆代码（确保在正确的目录）
+          cd /root
+          git clone $GITHUB_SERVER_URL/$GITHUB_REPOSITORY .
+
+          # 安装 rustup 和 Rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain nightly
+
+          # 设置持久化的 Rust 环境变量
+          echo '. "$HOME/.cargo/env"' >> /root/.profile
+
+          # 添加所需的目标支持
+          . /root/.profile
+          rustup target add x86_64-unknown-freebsd
+          rustup component add rust-src
+
+        run: |
+          # 加载环境变量
+          . /root/.profile
+
+          echo "构建动态链接版本..."
+          /usr/local/bin/bash scripts/build.sh
+
+          echo "构建静态链接版本..."
+          /usr/local/bin/bash scripts/build.sh --static
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4.5.0
+      with:
+        name: binaries-freebsd
+        path: release/*
+        retention-days: 1
+
+  release:
+    name: Create Release
+    needs: [build, build-freebsd]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4.2.2
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4.1.8
+      with:
+        path: artifacts
+
+    - name: Prepare release assets
+      run: |
+        mkdir release
+        cd artifacts
+        for dir in binaries-*; do
+          cp -r "$dir"/* ../release/
+        done
+
+    - name: Generate checksums
+      run: |
+        cd release
+        sha256sum * > SHA256SUMS.txt
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2.2.0
+      with:
+        files: |
+          release/*
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+        fail_on_unmatched_files: true
