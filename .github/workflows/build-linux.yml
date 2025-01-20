@@ -1,0 +1,34 @@
+name: Build Linux Binaries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu]
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler pkg-config libssl-dev nodejs npm
+
+      - name: Build binary
+        run: RUSTFLAGS="-C link-arg=-s" cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4.5.0
+        with:
+          name: cursor-api-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/cursor-api
